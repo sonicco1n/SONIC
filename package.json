@@ -1,0 +1,30 @@
+{
+  "name": "bottle-token",
+  "version": "1.0.0",
+  "description": "Bottle Token Smart Contract Deployment",
+  "main": "index.js",
+  "scripts": {
+    "compile": "npx hardhat compile",
+    "deploy": "npx hardhat run scripts/deploy.js --network localhost",
+    "deploy-testnet": "npx hardhat run scripts/deploy.js --network testnet",
+    "deploy-mainnet": "npx hardhat run scripts/deploy.js --network mainnet",
+    "node": "npx hardhat node",
+    "test": "npx hardhat test"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "hardhat": "^2.19.0"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.0",
+    "dotenv": "^17.2.2"
+  },
+  "keywords": [
+    "solidity",
+    "ethereum",
+    "smart-contract",
+    "erc20"
+  ],
+  "author": "",
+  "license": "MIT"
+}
