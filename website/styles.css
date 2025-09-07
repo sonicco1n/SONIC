@@ -137,6 +137,21 @@ body {
     }
 }
 
+/* 减少移动端动画以避免闪烁 */
+@media (max-width: 768px) {
+    .meme-container {
+        animation: none;
+    }
+    
+    .logo-icon:hover {
+        transform: none;
+    }
+    
+    .meme-image:hover {
+        transform: none;
+    }
+}
+
 .hero-content {
     max-width: 800px;
     margin-bottom: 3rem;
@@ -621,6 +636,9 @@ section {
         width: 100%;
         max-width: 300px;
         justify-content: center;
+        /* 移动端按钮优化 */
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
     }
     
     .hero-stats {
@@ -640,6 +658,20 @@ section {
     
     .section-title {
         font-size: 2rem;
+    }
+    
+    /* 移动端钱包连接按钮优化 */
+    .connect-wallet-btn {
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+        font-size: 0.9rem;
+        padding: 0.6rem 1.2rem;
+    }
+    
+    /* 禁用移动端的hover效果 */
+    .connect-wallet-btn:hover {
+        transform: none;
+        box-shadow: none;
     }
 }
 
@@ -663,6 +695,25 @@ section {
     .contract-info {
         padding: 1.5rem;
     }
+    
+    /* 小屏幕设备进一步优化 */
+    .connect-wallet-btn {
+        font-size: 0.8rem;
+        padding: 0.5rem 1rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 150px;
+    }
+    
+    /* 确保导航栏在小屏幕上不会重叠 */
+    .nav-container {
+        padding: 0 10px;
+    }
+    
+    .nav-logo {
+        font-size: 1.2rem;
+    }
 }
 
 /* 动画效果 */
@@ -680,6 +731,51 @@ section {
 .hero-content,
 .hero-stats {
     animation: fadeInUp 1s ease-out;
+}
+
+/* 移动端禁用复杂动画 */
+@media (max-width: 768px) {
+    .hero-content,
+    .hero-stats {
+        animation: none;
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* 移动端性能优化 */
+@media (max-width: 768px) {
+    * {
+        -webkit-transform: translateZ(0);
+        transform: translateZ(0);
+        -webkit-backface-visibility: hidden;
+        backface-visibility: hidden;
+    }
+    
+    body {
+        -webkit-overflow-scrolling: touch;
+        overflow-x: hidden;
+    }
+}
+
+/* 触摸设备优化 */
+.touch-device {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+.touch-device button,
+.touch-device .btn {
+    -webkit-touch-callout: default;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
 }
 
 /* 滚动行为 */
