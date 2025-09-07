@@ -115,8 +115,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // 应用初始化
 function initializeApp() {
-    // 检查是否已连接钱包
-    checkWalletConnection();
+    // 检测移动端并显示提示
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const mobileWalletTip = document.getElementById('mobileWalletTip');
+    
+    if (isMobile && mobileWalletTip) {
+        // 检查是否在 OKX App 内
+        const isInOKXApp = navigator.userAgent.includes('OKApp') || window.okxwallet;
+        if (!isInOKXApp) {
+            mobileWalletTip.style.display = 'block';
+            // 5秒后自动隐藏提示
+            setTimeout(() => {
+                mobileWalletTip.style.display = 'none';
+            }, 5000);
+        }
+    }
+    
+    // 延迟检查钱包连接，确保钱包完全加载
+    setTimeout(() => {
+        checkWalletConnection();
+    }, isMobile ? 2000 : 500);
     
     // 设置合约地址显示
     if (CONTRACT_CONFIG.address) {
@@ -147,11 +165,19 @@ function setupEventListeners() {
     connectWalletBtn.addEventListener('click', connectWallet);
     mintButton.addEventListener('click', mintTokens);
     
-    // 监听账户变化
-    if (window.ethereum) {
-        window.ethereum.on('accountsChanged', handleAccountsChanged);
-        window.ethereum.on('chainChanged', handleChainChanged);
-    }
+    // 延迟设置钱包事件监听器，确保钱包完全加载
+    setTimeout(() => {
+        const walletInfo = detectWallet();
+        if (walletInfo && walletInfo.provider) {
+            try {
+                walletInfo.provider.on('accountsChanged', handleAccountsChanged);
+                walletInfo.provider.on('chainChanged', handleChainChanged);
+                console.log('钱包事件监听器已设置');
+            } catch (error) {
+                console.warn('设置钱包事件监听器失败:', error);
+            }
+        }
+    }, 1000);
 }
 
 // 检查钱包连接状态
@@ -160,7 +186,16 @@ async function checkWalletConnection() {
     
     if (walletInfo) {
         try {
-            const accounts = await walletInfo.provider.request({ method: 'eth_accounts' });
+            // 移动端延迟检查
+            if (walletInfo.isMobile) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            
+            const accounts = await walletInfo.provider.request({ 
+                method: 'eth_accounts',
+                params: []
+            });
+            
             if (accounts.length > 0) {
                 // 自动连接已授权的钱包
                 web3 = new Web3(walletInfo.provider);
@@ -169,9 +204,13 @@ async function checkWalletConnection() {
                 
                 // 检查网络
                 try {
-                    await switchToXLayer(walletInfo.provider);
+                    const chainId = await walletInfo.provider.request({ method: 'eth_chainId' });
+                    if (chainId !== XLAYER_CONFIG.chainId) {
+                        console.log('需要切换到 X Layer 网络');
+                        // 不自动切换，让用户手动操作
+                    }
                 } catch (networkError) {
-                    console.warn('网络切换失败，但钱包已连接:', networkError);
+                    console.warn('网络检查失败:', networkError);
                 }
                 
                 // 初始化合约
@@ -184,30 +223,48 @@ async function checkWalletConnection() {
                 
                 // 更新合约信息
                 if (contract) {
-                    await updateContractInfo();
+                    try {
+                        await updateContractInfo();
+                    } catch (contractError) {
+                        console.warn('合约信息更新失败:', contractError);
+                    }
                 }
                 
                 console.log(`${walletInfo.name} 自动连接成功:`, userAccount);
             }
         } catch (error) {
             console.error('检查钱包连接失败:', error);
+            // 不显示错误提示，静默失败
         }
     }
 }
 
 // 检测可用的钱包
 function detectWallet() {
+    // 移动端优先检测
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    // OKX Wallet 检测 - 多种方式
     if (window.okxwallet && window.okxwallet.ethereum) {
-        return { provider: window.okxwallet.ethereum, name: 'OKX Wallet' };
-    } else if (window.ethereum) {
-        if (window.ethereum.isOkxWallet) {
-            return { provider: window.ethereum, name: 'OKX Wallet' };
-        } else if (window.ethereum.isMetaMask) {
-            return { provider: window.ethereum, name: 'MetaMask' };
-        } else {
-            return { provider: window.ethereum, name: 'Web3 Wallet' };
-        }
+        return { provider: window.okxwallet.ethereum, name: 'OKX Wallet', isMobile };
     }
+    
+    if (window.ethereum) {
+        // 检查是否为 OKX Wallet
+        if (window.ethereum.isOkxWallet || 
+            (window.ethereum.providers && window.ethereum.providers.find(p => p.isOkxWallet))) {
+            return { provider: window.ethereum, name: 'OKX Wallet', isMobile };
+        }
+        
+        // MetaMask 检测
+        if (window.ethereum.isMetaMask) {
+            return { provider: window.ethereum, name: 'MetaMask', isMobile };
+        }
+        
+        // 通用 Web3 钱包
+        return { provider: window.ethereum, name: 'Web3 Wallet', isMobile };
+    }
+    
     return null;
 }
 
@@ -216,25 +273,54 @@ async function connectWallet() {
     const walletInfo = detectWallet();
     
     if (!walletInfo) {
-        alert('请安装 OKX Wallet 或 MetaMask 钱包!\n\n推荐使用 OKX Wallet 以获得最佳体验。');
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        let message;
+        
+        if (isMobile) {
+            message = '移动端钱包连接说明:\n\n' +
+                     '1. 推荐使用 OKX App 内置浏览器打开此页面\n' +
+                     '2. 或下载 OKX Wallet 移动应用\n' +
+                     '3. 确保钱包应用已安装并设置完成\n\n' +
+                     '如果问题持续，请尝试刷新页面。';
+        } else {
+            message = '请安装 OKX Wallet 或 MetaMask 钱包!\n\n推荐使用 OKX Wallet 以获得最佳体验。';
+        }
+        
+        alert(message);
         return;
     }
+
+    // 显示加载状态
+    const originalText = connectWalletBtn.innerHTML;
+    connectWalletBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 连接中...';
+    connectWalletBtn.disabled = true;
 
     try {
         // 使用检测到的钱包提供者
         const provider = walletInfo.provider;
         
+        // 移动端特殊处理
+        if (walletInfo.isMobile) {
+            // 添加延迟以确保钱包应用有时间响应
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
         // 请求连接钱包
-        const accounts = await provider.request({ method: 'eth_requestAccounts' });
+        const accounts = await provider.request({ 
+            method: 'eth_requestAccounts',
+            params: []
+        });
         
         if (accounts.length === 0) {
             throw new Error('未选择账户');
         }
 
         // 检查并切换到 X Layer 网络
+        connectWalletBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 切换网络...';
         await switchToXLayer(provider);
 
         // 初始化 Web3
+        connectWalletBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 初始化...';
         web3 = new Web3(provider);
         userAccount = accounts[0];
         isConnected = true;
@@ -255,7 +341,22 @@ async function connectWallet() {
         console.log(`${walletInfo.name} 连接成功:`, userAccount);
     } catch (error) {
         console.error('连接钱包失败:', error);
-        alert('连接钱包失败: ' + error.message);
+        
+        // 根据错误类型提供不同的提示
+        let errorMessage = '连接钱包失败: ';
+        if (error.code === 4001) {
+            errorMessage += '用户拒绝了连接请求';
+        } else if (error.code === -32002) {
+            errorMessage += '钱包连接请求已在处理中，请检查钱包应用';
+        } else {
+            errorMessage += error.message;
+        }
+        
+        alert(errorMessage);
+    } finally {
+        // 恢复按钮状态
+        connectWalletBtn.innerHTML = originalText;
+        connectWalletBtn.disabled = false;
     }
 }
 
