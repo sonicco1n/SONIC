@@ -120,7 +120,12 @@ function initializeApp() {
     
     // 设置合约地址显示
     if (CONTRACT_CONFIG.address) {
-        contractAddress.textContent = CONTRACT_CONFIG.address;
+        contractAddress.innerHTML = `
+            <i class="fas fa-file-contract"></i>
+            合约地址: <span onclick="copyAddress()" style="cursor: pointer; text-decoration: underline;">
+                ${formatAddress(CONTRACT_CONFIG.address)}
+            </span>
+        `;
     }
     
     // 如果没有合约地址，显示提示
@@ -129,6 +134,11 @@ function initializeApp() {
         mintStatus.className = 'status unavailable';
         mintButton.textContent = '合约未部署';
         mintButton.disabled = true;
+    }
+    
+    // 添加移动端触摸优化
+    if ('ontouchstart' in window) {
+        document.body.classList.add('touch-device');
     }
 }
 
@@ -146,11 +156,38 @@ function setupEventListeners() {
 
 // 检查钱包连接状态
 async function checkWalletConnection() {
-    if (typeof window.ethereum !== 'undefined') {
+    const walletInfo = detectWallet();
+    
+    if (walletInfo) {
         try {
-            const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+            const accounts = await walletInfo.provider.request({ method: 'eth_accounts' });
             if (accounts.length > 0) {
-                await connectWallet();
+                // 自动连接已授权的钱包
+                web3 = new Web3(walletInfo.provider);
+                userAccount = accounts[0];
+                isConnected = true;
+                
+                // 检查网络
+                try {
+                    await switchToXLayer(walletInfo.provider);
+                } catch (networkError) {
+                    console.warn('网络切换失败，但钱包已连接:', networkError);
+                }
+                
+                // 初始化合约
+                if (CONTRACT_CONFIG.address) {
+                    contract = new web3.eth.Contract(CONTRACT_CONFIG.abi, CONTRACT_CONFIG.address);
+                }
+                
+                // 更新 UI
+                updateWalletUI(walletInfo.name);
+                
+                // 更新合约信息
+                if (contract) {
+                    await updateContractInfo();
+                }
+                
+                console.log(`${walletInfo.name} 自动连接成功:`, userAccount);
             }
         } catch (error) {
             console.error('检查钱包连接失败:', error);
@@ -158,26 +195,47 @@ async function checkWalletConnection() {
     }
 }
 
+// 检测可用的钱包
+function detectWallet() {
+    if (window.okxwallet && window.okxwallet.ethereum) {
+        return { provider: window.okxwallet.ethereum, name: 'OKX Wallet' };
+    } else if (window.ethereum) {
+        if (window.ethereum.isOkxWallet) {
+            return { provider: window.ethereum, name: 'OKX Wallet' };
+        } else if (window.ethereum.isMetaMask) {
+            return { provider: window.ethereum, name: 'MetaMask' };
+        } else {
+            return { provider: window.ethereum, name: 'Web3 Wallet' };
+        }
+    }
+    return null;
+}
+
 // 连接钱包
 async function connectWallet() {
-    if (typeof window.ethereum === 'undefined') {
-        alert('请安装 MetaMask 或其他 Web3 钱包!');
+    const walletInfo = detectWallet();
+    
+    if (!walletInfo) {
+        alert('请安装 OKX Wallet 或 MetaMask 钱包!\n\n推荐使用 OKX Wallet 以获得最佳体验。');
         return;
     }
 
     try {
+        // 使用检测到的钱包提供者
+        const provider = walletInfo.provider;
+        
         // 请求连接钱包
-        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        const accounts = await provider.request({ method: 'eth_requestAccounts' });
         
         if (accounts.length === 0) {
             throw new Error('未选择账户');
         }
 
         // 检查并切换到 X Layer 网络
-        await switchToXLayer();
+        await switchToXLayer(provider);
 
         // 初始化 Web3
-        web3 = new Web3(window.ethereum);
+        web3 = new Web3(provider);
         userAccount = accounts[0];
         isConnected = true;
 
@@ -187,14 +245,14 @@ async function connectWallet() {
         }
 
         // 更新 UI
-        updateWalletUI();
+        updateWalletUI(walletInfo.name);
         
         // 更新合约信息
         if (contract) {
             await updateContractInfo();
         }
 
-        console.log('钱包连接成功:', userAccount);
+        console.log(`${walletInfo.name} 连接成功:`, userAccount);
     } catch (error) {
         console.error('连接钱包失败:', error);
         alert('连接钱包失败: ' + error.message);
@@ -202,10 +260,10 @@ async function connectWallet() {
 }
 
 // 切换到 X Layer 网络
-async function switchToXLayer() {
+async function switchToXLayer(provider = window.ethereum) {
     try {
         // 尝试切换到 X Layer
-        await window.ethereum.request({
+        await provider.request({
             method: 'wallet_switchEthereumChain',
             params: [{ chainId: XLAYER_CONFIG.chainId }],
         });
@@ -213,7 +271,7 @@ async function switchToXLayer() {
         // 如果网络不存在，添加网络
         if (switchError.code === 4902) {
             try {
-                await window.ethereum.request({
+                await provider.request({
                     method: 'wallet_addEthereumChain',
                     params: [XLAYER_CONFIG],
                 });
@@ -227,10 +285,11 @@ async function switchToXLayer() {
 }
 
 // 更新钱包 UI
-function updateWalletUI() {
+function updateWalletUI(walletName = '') {
     if (isConnected && userAccount) {
         const shortAddress = `${userAccount.slice(0, 6)}...${userAccount.slice(-4)}`;
-        connectWalletBtn.innerHTML = `<i class="fas fa-wallet"></i> ${shortAddress}`;
+        const displayText = walletName ? `${walletName.split(' ')[0]} ${shortAddress}` : shortAddress;
+        connectWalletBtn.innerHTML = `<i class="fas fa-wallet"></i> ${displayText}`;
         connectWalletBtn.style.background = '#28a745';
         
         // 更新铸造按钮
@@ -386,16 +445,24 @@ async function mintTokens() {
 // 处理账户变化
 function handleAccountsChanged(accounts) {
     if (accounts.length === 0) {
-        // 用户断开连接
+        // 用户断开了钱包连接
         isConnected = false;
         userAccount = null;
+        web3 = null;
         contract = null;
         updateWalletUI();
         mintStatus.textContent = '请连接钱包';
         mintStatus.className = 'status checking';
+        console.log('钱包已断开连接');
     } else {
-        // 用户切换账户
-        connectWallet();
+        // 用户切换了账户
+        userAccount = accounts[0];
+        const walletInfo = detectWallet();
+        updateWalletUI(walletInfo ? walletInfo.name : '');
+        if (contract) {
+            updateContractInfo();
+        }
+        console.log('账户已切换:', userAccount);
     }
 }
 
